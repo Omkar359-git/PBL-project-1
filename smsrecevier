@@ -1,0 +1,227 @@
+package com.example.omkar
+
+import android.content.BroadcastReceiver
+import android.content.Context
+import android.content.Intent
+import android.os.Bundle
+import android.telephony.SmsMessage
+import android.util.Log
+
+class SMSReceiver : BroadcastReceiver() {
+
+    override fun onReceive(
+        context: Context,
+        intent: Intent
+    ) {
+
+        if (
+            intent.action !=
+            "android.provider.Telephony.SMS_RECEIVED"
+        ) {
+            return
+        }
+
+        Log.d(
+            "SMSReceiver",
+            "New SMS received"
+        )
+
+        val bundle: Bundle =
+            intent.extras ?: return
+
+        val pdus =
+            bundle["pdus"] as? Array<*> ?: return
+
+        val format =
+            bundle.getString("format")
+
+        val notificationHelper =
+            NotificationHelper(context)
+
+        for (pdu in pdus) {
+
+            val sms =
+                SmsMessage.createFromPdu(
+                    pdu as ByteArray,
+                    format
+                )
+
+            val sender =
+                sms.displayOriginatingAddress
+                    ?: "Unknown"
+
+            val message =
+                sms.displayMessageBody
+                    ?: ""
+
+            Log.d(
+                "SMSReceiver",
+                "Sender: $sender"
+            )
+
+            Log.d(
+                "SMSReceiver",
+                "Message: $message"
+            )
+
+            // ----------------------------------------
+            // SCAM KEYWORDS
+            // ----------------------------------------
+
+            val scamKeywords = listOf(
+                "otp",
+                "urgent",
+                "winner",
+                "won",
+                "prize",
+                "click",
+                "verify",
+                "account blocked",
+                "bank",
+                "upi",
+                "payment",
+                "refund",
+                "kyc",
+                "suspended",
+                "password",
+                "login",
+                "claim",
+                "reward"
+            )
+
+            val lowerMessage =
+                message.lowercase()
+
+
+            // ----------------------------------------
+            // FIND MATCHED KEYWORDS
+            // ----------------------------------------
+
+            val matchedKeywords =
+                scamKeywords.filter {
+                    lowerMessage.contains(it)
+                }
+
+
+            // ----------------------------------------
+            // CALCULATE SCORE
+            // ----------------------------------------
+
+            var score = 0
+
+            // Each suspicious keyword
+            score += matchedKeywords.size
+
+
+            // Multiple suspicious keywords
+            if (matchedKeywords.size >= 3) {
+                score += 2
+            }
+
+
+            // Suspicious link
+            val hasLink =
+                lowerMessage.contains("http://") ||
+                        lowerMessage.contains("https://") ||
+                        lowerMessage.contains("www.")
+
+            if (hasLink) {
+                score += 2
+            }
+
+
+            // Urgent/threatening language
+            val urgentWords = listOf(
+                "urgent",
+                "immediately",
+                "act now",
+                "within 24 hours",
+                "blocked",
+                "suspended"
+            )
+
+            val hasUrgentLanguage =
+                urgentWords.any {
+                    lowerMessage.contains(it)
+                }
+
+            if (hasUrgentLanguage) {
+                score += 1
+            }
+
+
+            // ----------------------------------------
+            // FINAL RISK LEVEL
+            // ----------------------------------------
+
+            val riskLevel: String
+
+            if (score >= 4) {
+
+                riskLevel = "HIGH"
+
+            } else if (score >= 2) {
+
+                riskLevel = "MEDIUM"
+
+            } else {
+
+                riskLevel = "LOW"
+            }
+
+
+            // ----------------------------------------
+            // REASON
+            // ----------------------------------------
+
+            val reason: String
+
+            if (matchedKeywords.isNotEmpty()) {
+
+                reason =
+                    "Suspicious keywords: " +
+                            matchedKeywords.joinToString(", ")
+
+            } else if (hasLink) {
+
+                reason =
+                    "Suspicious link detected"
+
+            } else {
+
+                reason =
+                    "No major scam indicators detected"
+            }
+
+
+            // ----------------------------------------
+            // LOG RESULT
+            // ----------------------------------------
+
+            Log.d(
+                "SMSReceiver",
+                "Risk Score: $score"
+            )
+
+            Log.d(
+                "SMSReceiver",
+                "Risk Level: $riskLevel"
+            )
+
+            Log.d(
+                "SMSReceiver",
+                "Reason: $reason"
+            )
+
+
+            // ----------------------------------------
+            // SHOW NOTIFICATION
+            // ----------------------------------------
+
+            notificationHelper.showScamAlert(
+                riskLevel = riskLevel,
+                reason = reason
+            )
+        }
+    }
+}
